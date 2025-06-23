@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 from extract_curl import process_extracted_curls, generate_requests_from_json
@@ -159,14 +160,19 @@ if st.session_state.get("script_generated"):
 
             # ✅ Show only before running
             with st.status("🚀 Running script...", expanded=False) as status:
-                venv_python = Path("./.venv") / "Scripts" / "python.exe"
-                print("venv_python:::::::::",venv_python)
+                # Detect correct python interpreter
+                venv_python = (
+                    Path(".venv") / "Scripts" / "python.exe" if sys.platform == "win32"
+                    else Path(".venv") / "bin" / "python"
+                )
                 if not venv_python.exists():
-                    venv_python = "python"
+                    venv_python = "python"  # Fallback for Streamlit Cloud
 
                 start_time = time.time()
                 result = subprocess.run([str(venv_python), output_script_path], capture_output=True, text=True)
                 elapsed = round(time.time() - start_time, 2)
+
+                st.success(f"✅ Script executed in {elapsed} seconds.")
 
                 # ✅ Mark complete and hide spinner
                 status.update(label=f"✅ Script executed in {elapsed} seconds.", state="complete")
