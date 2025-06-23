@@ -166,10 +166,11 @@ if st.session_state.get("script_generated"):
                     else Path(".venv") / "bin" / "python"
                 )
                 if not venv_python.exists():
-                    venv_python = "python"  # Fallback for Streamlit Cloud
+                    venv_python = "python"
 
                 start_time = time.time()
-                result = subprocess.run([str(venv_python), output_script_path], capture_output=True, text=True)
+                python_exec = sys.executable
+                result = subprocess.run([python_exec, output_script_path], capture_output=True, text=True)
                 elapsed = round(time.time() - start_time, 2)
 
                 st.success(f"✅ Script executed in {elapsed} seconds.")
