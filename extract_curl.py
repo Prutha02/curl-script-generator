@@ -140,7 +140,8 @@ def process_extracted_curls(content, extracted_data_dir="extracted_data"):
                         categories[key].append({})
                 elif key == "body_params":
                     body = result.get("body_params", {})
-                    fallback_data = body if not isinstance(body, dict) or any(isinstance(v, str) for v in body.values()) else {}
+                    fallback_data = body if not isinstance(body, dict) or any(
+                        isinstance(v, str) for v in body.values()) else {}
                     categories[key].append(fallback_data)
                 else:
                     categories[key].append(result.get(key, {}))
@@ -170,12 +171,15 @@ def get_latest_file(directory, prefix):
 
 
 def generate_requests_from_json(
-    headers_file, cookies_file, query_params_file, body_params_file,
-    form_data_file, json_data_file, meta_file, output_file,
-    include_requests, use_cookies_list, use_proxy_list,
-    use_curl_cffi_list, search_texts, total_runs=1, threads=5,
-    report_filename="report.xlsx", response_dir="saved_pages"
-):
+        headers_file, cookies_file, query_params_file, body_params_file,
+        form_data_file, json_data_file, meta_file, output_file,
+        include_requests, use_cookies_list, use_proxy_list,
+        use_curl_cffi_list, search_texts, total_runs=1, threads=5,
+        report_filename="report.xlsx", response_dir="saved_pages",
+        proxy_url=""):
+    import os, json, urllib.parse, textwrap
+    os.makedirs(response_dir, exist_ok=True)
+
     with open(headers_file, "r", encoding="utf-8") as f:
         headers_list = json.load(f)
     with open(cookies_file, "r", encoding="utf-8") as f:
@@ -191,8 +195,6 @@ def generate_requests_from_json(
     with open(meta_file, "r", encoding="utf-8") as f:
         meta_list = json.load(f)
 
-    os.makedirs(response_dir, exist_ok=True)
-
     script_lines = [
         "import json",
         "import urllib.parse",
@@ -206,7 +208,6 @@ def generate_requests_from_json(
 
     for idx, meta in enumerate(meta_list):
         if not include_requests[idx]:
-            print(f"Skipping request #{idx + 1}")
             continue
 
         method = meta["method"].lower()
@@ -231,7 +232,7 @@ def generate_requests_from_json(
         domain = urllib.parse.urlparse(url).netloc.replace('.', '_')
 
         req_code = []
-        req_code.append(f"def request_{idx}():")
+        req_code.append(f"def request_{idx}(iteration=None):")
         req_code.append(f"    url = {json.dumps(url)}")
         req_code.append(f"    params = {params}")
         req_code.append(f"    headers = {headers}" if headers else "    headers = {}")
@@ -239,10 +240,9 @@ def generate_requests_from_json(
         req_code.append(f"    files = {files}")
         req_code.append(f"    text_to_search = {json.dumps(search_text)}")
 
-        if use_proxy:
-            req_code.append("    token = \"f42a5b59aec3467e97a8794c611c436b915896\"")
-            req_code.append("    proxyModeUrl = \"http://{}:super=true@proxy.scrape.do:8080\".format(token)")
-            req_code.append("    proxies = {\"http\": proxyModeUrl, \"https\": proxyModeUrl}")
+        if use_proxy and proxy_url:
+            req_code.append(f"    proxy_url = {json.dumps(proxy_url)}")
+            req_code.append("    proxies = {\"http\": proxy_url, \"https\": proxy_url}")
 
         req_code.append("    start_time = time.time()")
 
@@ -256,46 +256,46 @@ def generate_requests_from_json(
             request_args += ", data=data"
 
         request_args += ", files=files"
-        if use_proxy:
+        if use_proxy and proxy_url:
             request_args += ", proxies=proxies, verify=False"
         request_args += impersonate_line
 
-        req_code.append(f"    response = requests.{method}({request_args})")
-        # req_code.append(f"    print(response.status_code)")
-        req_code.append("    end_time = time.time()")
-        req_code.append("    elapsed = round(end_time - start_time, 2)")
-        req_code.append("    matched = 'Yes' if text_to_search and text_to_search in response.text else 'No'")
-        req_code.append("    results.append({")
-        req_code.append("        'url': url,")
-        req_code.append("        'status_code': response.status_code,")
-        req_code.append("        'status': 'Success' if response.status_code == 200 else 'Failed',")
-        req_code.append("        'time_taken': elapsed,")
-        req_code.append("        'text_matched': matched")
-        req_code.append("    })")
+        req_code.append("    try:")
+        req_code.append(f"        response = requests.{method}({request_args})")
+        req_code.append("        end_time = time.time()")
+        req_code.append("        elapsed = round(end_time - start_time, 2)")
+        req_code.append("        matched = 'Yes' if text_to_search and text_to_search in response.text else 'No'")
+        req_code.append("        status = 'Success' if response.status_code == 200 else 'Failed'")
+        req_code.append(
+            "        print(f'Iteration: {iteration} Status: {response.status_code}, Matched: {matched}, Result: {status}')")
 
-        req_code.append("    if response.status_code == 200 and matched == 'Yes':")
-        req_code.append("        content_type = response.headers.get('Content-Type', '')")
-        req_code.append("        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')")
+        req_code.append("        results.append({")
+        req_code.append("            'url': url,")
+        req_code.append("            'status_code': response.status_code,")
+        req_code.append("            'status': status,")
+        req_code.append("            'time_taken': elapsed,")
+        req_code.append("            'text_matched': matched")
+        req_code.append("        })")
 
-        req_code.append(f"        file_prefix = '{response_dir}/response_{domain}_' + timestamp + '_{idx}'")
-        req_code.append("        if 'application/json' in content_type:")
-        req_code.append("            with open(file_prefix + '.json', 'w', encoding='utf-8') as f:")
-        req_code.append("                json.dump(response.json(), f, ensure_ascii=False, indent=4)")
-        req_code.append("        elif 'text/html' in content_type:")
-        req_code.append("            with open(file_prefix + '.html', 'w', encoding='utf-8') as f:")
-        req_code.append("                f.write(response.text)")
-        req_code.append("        else:")
-        req_code.append("            with open(file_prefix + '.txt', 'w', encoding='utf-8') as f:")
-        req_code.append("                f.write(response.text)")
-        # req_code.append("        print(f'Saved to {file_prefix}')")
-        # req_code.append("    else:")
-        # req_code.append("        print('Request failed or text not matched.')")
-        req_code.append("")
+        req_code.append("        if response.status_code == 200 and matched == 'Yes':")
+        req_code.append("            content_type = response.headers.get('Content-Type', '')")
+        req_code.append("            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')")
+        req_code.append(f"            file_prefix = '{response_dir}/response_{domain}_' + timestamp + '_{idx}'")
+        req_code.append("            if 'application/json' in content_type:")
+        req_code.append("                with open(file_prefix + '.json', 'w', encoding='utf-8') as f:")
+        req_code.append("                    json.dump(response.json(), f, ensure_ascii=False, indent=4)")
+        req_code.append("            elif 'text/html' in content_type:")
+        req_code.append("                with open(file_prefix + '.html', 'w', encoding='utf-8') as f:")
+        req_code.append("                    f.write(response.text)")
+        req_code.append("            else:")
+        req_code.append("                with open(file_prefix + '.txt', 'w', encoding='utf-8') as f:")
+        req_code.append("                    f.write(response.text)")
+        req_code.append("    except Exception as e:")
+        req_code.append("        print(f'Iteration: {iteration} Request failed with error: {e}')")
 
         script_lines.extend(req_code)
         script_lines.append(f"requests_list.append(request_{idx})")
 
-    # Main execution block
     main_block = f"""
 if __name__ == "__main__":
     total_runs = {total_runs}
@@ -303,14 +303,14 @@ if __name__ == "__main__":
     report_filename = {json.dumps(report_filename)}
 
     expanded_requests = []
-    for _ in range(total_runs):
-        expanded_requests.extend(requests_list)
+    for i in range(total_runs):
+        for req in requests_list:
+            expanded_requests.append((req, i + 1))
 
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = {{
-            executor.submit(request): i for i, request in enumerate(expanded_requests)
+            executor.submit(req, iter_num): i for i, (req, iter_num) in enumerate(expanded_requests)
         }}
-
         for future in as_completed(futures):
             try:
                 future.result()
@@ -319,7 +319,6 @@ if __name__ == "__main__":
 
     df = pd.DataFrame(results)
     df.to_excel(report_filename, index=False)
-    # print(f"Excel report saved as '{{report_filename}}'")
     print("All requests completed.")
 """
     script_lines.append(textwrap.dedent(main_block))
@@ -327,5 +326,4 @@ if __name__ == "__main__":
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("\n".join(script_lines))
 
-    print(f"\nGenerated {output_file}.")
-
+    print(f"\n✅ Generated script: {output_file}")
