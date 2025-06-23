@@ -264,7 +264,7 @@ def generate_requests_from_json(
         # req_code.append(f"    print(response.status_code)")
         req_code.append("    end_time = time.time()")
         req_code.append("    elapsed = round(end_time - start_time, 2)")
-        req_code.append("    matched = 'Yes' if not text_to_search or text_to_search in response.text else 'No'")
+        req_code.append("    matched = 'Yes' if text_to_search and text_to_search in response.text else 'No'")
         req_code.append("    results.append({")
         req_code.append("        'url': url,")
         req_code.append("        'status_code': response.status_code,")
