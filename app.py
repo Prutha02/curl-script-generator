@@ -15,21 +15,20 @@ user_input = st.text_area("Paste your cURL commands here", height=300)
 extracted_data_dir = "extracted_data"
 output_script_path = "../python_request.py"
 
-# ✅ Step 1: Process cURL
+if "script_ran" not in st.session_state:
+    st.session_state["script_ran"] = False
+
 if st.button("Process cURL"):
     if user_input.strip():
         content = user_input.replace("\\\n", " ").replace("^\n", " ")
         extracted_data = process_extracted_curls(content, extracted_data_dir)
         st.session_state["extracted_data"] = extracted_data
-        st.session_state["curl_processed"] = True  # ✅ Track cURL processed
+        st.session_state["curl_processed"] = True
         st.success("✅ cURL commands processed and saved.")
     else:
         st.warning("⚠️ Please paste at least one cURL command.")
 
-# ✅ Only show next steps if cURL was processed
 if st.session_state.get("curl_processed"):
-
-    # ---- Sidebar Preview ----
     extracted_data = st.session_state.get("extracted_data", {})
 
     st.sidebar.header("🔍 View Extracted Category")
@@ -44,7 +43,6 @@ if st.session_state.get("curl_processed"):
     else:
         st.sidebar.write("No data in this category.")
 
-    # ✅ Step 2: Request Configuration
     st.title("🛠️ Generate Python Request")
 
     def load_json(filepath):
@@ -109,12 +107,14 @@ if st.session_state.get("curl_processed"):
             use_curl_cffi_list.append(cffi)
             search_texts.append(search)
 
-    # ✅ Step 3: Script Generation
-    st.subheader("🧪 Execution Settings")
+    st.subheader("🌐 Proxy Settings")
+    proxy_url = st.text_input("🛡️ Proxy URL (e.g., http://user:pass@host:port)", value="")
+
+    st.subheader("🥪 Execution Settings")
     total_runs = st.number_input("🔁 Number of times to run all requests", min_value=1, value=1)
     threads = st.number_input("🔧 Number of threads to use", min_value=1, value=1)
 
-    if st.button("🚀 Generate Python Script"):
+    if st.button("🚀 Generate Python Script", disabled=st.session_state["script_ran"]):
         if not any(include_requests):
             st.warning("⚠️ You must include at least one request.")
             st.stop()
@@ -135,7 +135,8 @@ if st.session_state.get("curl_processed"):
                 search_texts=search_texts,
                 total_runs=total_runs,
                 threads=threads,
-                report_filename="report.xlsx"
+                report_filename="report.xlsx",
+                proxy_url=proxy_url
             )
 
             st.success(f"✅ Script generated: `{output_script_path}`")
@@ -144,23 +145,20 @@ if st.session_state.get("curl_processed"):
                 code = f.read()
             st.code(code, language="python")
 
-            st.download_button("📥 Download Script", code, file_name="generated_script.py", mime="text/x-python")
+            st.download_button("📅 Download Script", code, file_name="generated_script.py", mime="text/x-python")
 
             st.session_state["script_generated"] = True
+            # st.session_state["script_ran"] = True
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
 
-# ✅ Step 4: Run Script (outside Generate Script block)
 if st.session_state.get("script_generated"):
     st.markdown("### ▶️ Run Script")
 
     if st.button("▶️ Run now", key="run_script"):
         try:
-
-            # ✅ Show only before running
-            with st.status("🚀 Running script...", expanded=False) as status:
-                # Detect correct python interpreter
+            with st.status("🚀 Running script...", expanded=True) as status:
                 venv_python = (
                     Path(".venv") / "Scripts" / "python.exe" if sys.platform == "win32"
                     else Path(".venv") / "bin" / "python"
@@ -168,30 +166,39 @@ if st.session_state.get("script_generated"):
                 if not venv_python.exists():
                     venv_python = "python"
 
-                start_time = time.time()
                 python_exec = sys.executable
-                result = subprocess.run([python_exec, output_script_path], capture_output=True, text=True)
+                start_time = time.time()
+
+                st.write("### 📤 Output:")
+                output_container = st.empty()
+
+                process = subprocess.Popen(
+                    [python_exec, "-u", output_script_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True,
+                    bufsize=1
+                )
+
+                live_output = ""
+                for line in process.stdout:
+                    live_output += line
+                    output_container.code(live_output, language="bash")
+
+                process.stdout.close()
+                return_code = process.wait()
                 elapsed = round(time.time() - start_time, 2)
 
-                st.success(f"✅ Script executed in {elapsed} seconds.")
-
-                # ✅ Mark complete and hide spinner
-                status.update(label=f"✅ Script executed in {elapsed} seconds.", state="complete")
-
-            # ✅ Show result/output
-            if result.stdout:
-                st.subheader("📤 Output")
-                st.code(result.stdout, language="bash")
-
-            if result.stderr:
-                st.subheader("⚠️ Errors")
-                st.code(result.stderr, language="bash")
+                if return_code == 0:
+                    st.success(f"✅ Script executed in {elapsed} seconds.")
+                else:
+                    st.error(f"❌ Script exited with code {return_code}")
 
             report_path = Path("report.xlsx")
             if report_path.exists():
                 with open(report_path, "rb") as f:
                     st.download_button(
-                        "📥 Download Excel Report",
+                        "📅 Download Excel Report",
                         f,
                         file_name="report.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -199,6 +206,9 @@ if st.session_state.get("script_generated"):
             else:
                 st.warning("⚠️ Report file not found.")
 
+            st.session_state["script_ran"] = False
+
         except Exception as e:
             st.error(f"❌ Error running script: {e}")
+
 
