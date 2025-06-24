@@ -175,9 +175,10 @@ def generate_requests_from_json(
         form_data_file, json_data_file, meta_file, output_file,
         include_requests, use_cookies_list, use_proxy_list,
         use_curl_cffi_list, search_texts, total_runs=1, threads=5,
-        report_filename="report.xlsx", response_dir="saved_pages",
+        report_filename="report.xlsx",  response_dir="saved_pages",
         proxy_url=""):
-    import os, json, urllib.parse, textwrap
+
+
     os.makedirs(response_dir, exist_ok=True)
 
     with open(headers_file, "r", encoding="utf-8") as f:
@@ -297,6 +298,7 @@ def generate_requests_from_json(
         script_lines.append(f"requests_list.append(request_{idx})")
 
     main_block = f"""
+
 if __name__ == "__main__":
     total_runs = {total_runs}
     threads = {threads}
@@ -327,3 +329,6 @@ if __name__ == "__main__":
         f.write("\n".join(script_lines))
 
     print(f"\n✅ Generated script: {output_file}")
+
+
+
