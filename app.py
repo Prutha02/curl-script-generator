@@ -6,7 +6,21 @@ from pathlib import Path
 from extract_curl import process_extracted_curls, generate_requests_from_json
 import streamlit as st
 
-st.set_page_config(page_title="cURL Extractor", layout="wide")
+
+st.set_page_config(page_title="cURL Request Extractor", layout="wide")
+
+# --- Session state setup ---
+if "script_ran" not in st.session_state:
+    st.session_state["script_ran"] = False
+if "reset_generate" not in st.session_state:
+    st.session_state["reset_generate"] = False
+
+# --- Reset after script run ---
+if st.session_state["reset_generate"]:
+    st.session_state["script_ran"] = False
+    st.session_state["reset_generate"] = False
+    st.rerun()
+
 
 st.title("cURL Request Extractor")
 st.markdown("Paste one or more `curl` commands below:")
@@ -14,9 +28,6 @@ st.markdown("Paste one or more `curl` commands below:")
 user_input = st.text_area("Paste your cURL commands here", height=300)
 extracted_data_dir = "extracted_data"
 output_script_path = "../python_request.py"
-
-if "script_ran" not in st.session_state:
-    st.session_state["script_ran"] = False
 
 if st.button("Process cURL"):
     if user_input.strip():
@@ -107,13 +118,25 @@ if st.session_state.get("curl_processed"):
             use_curl_cffi_list.append(cffi)
             search_texts.append(search)
 
-    st.subheader("🌐 Proxy Settings")
-    proxy_url = st.text_input("🛡️ Proxy URL (e.g., http://user:pass@host:port)", value="")
+    proxy_url = ""
+    if any(use_proxy_list):
+        st.subheader("🌐 Proxy Settings")
+        proxy_url = st.text_input("🛡️ Proxy URL (e.g., http://user:pass@host:port)")
+
+        # Validate proxy URL
+        if not proxy_url:
+            st.error("❌ Proxy URL is required since at least one request is using a proxy.")
+            st.stop()
+        elif not proxy_url.lower().startswith(("http://", "https://")):
+            st.error("❌ Invalid Proxy Url")
+            st.stop()
+
 
     st.subheader("🥪 Execution Settings")
     total_runs = st.number_input("🔁 Number of times to run all requests", min_value=1, value=1)
     threads = st.number_input("🔧 Number of threads to use", min_value=1, value=1)
 
+    # 🔐 Disable button if script has run
     if st.button("🚀 Generate Python Script", disabled=st.session_state["script_ran"]):
         if not any(include_requests):
             st.warning("⚠️ You must include at least one request.")
@@ -148,13 +171,13 @@ if st.session_state.get("curl_processed"):
             st.download_button("📅 Download Script", code, file_name="generated_script.py", mime="text/x-python")
 
             st.session_state["script_generated"] = True
-            # st.session_state["script_ran"] = True
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
 
 if st.session_state.get("script_generated"):
     st.markdown("### ▶️ Run Script")
+    st.session_state["script_ran"] = True  # 🔒 Disable button
 
     if st.button("▶️ Run now", key="run_script"):
         try:
@@ -206,7 +229,8 @@ if st.session_state.get("script_generated"):
             else:
                 st.warning("⚠️ Report file not found.")
 
-            st.session_state["script_ran"] = False
+            # ✅ Trigger button re-enable
+            st.session_state["reset_generate"] = True
 
         except Exception as e:
             st.error(f"❌ Error running script: {e}")
